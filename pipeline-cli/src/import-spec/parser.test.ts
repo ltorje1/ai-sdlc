@@ -27,6 +27,17 @@ describe('detectSchema', () => {
     const src = '### T-001 — Heading task\n\n- [ ] T-002 — Checkbox';
     expect(detectSchema(src)).toBe('v0.8-headings');
   });
+
+  it('detects speckit-checklist-labels layout from an unhyphenated T### line', () => {
+    expect(detectSchema('- [ ] T001 Create project structure')).toBe('speckit-checklist-labels');
+    expect(detectSchema('- [ ] T003 [P] Configure linting')).toBe('speckit-checklist-labels');
+    expect(detectSchema('- [ ] T021 [P] [US1] Unit test in src/Foo.test.ts')).toBe(
+      'speckit-checklist-labels',
+    );
+    expect(detectSchema('- [x] T030 [US1] Implement CapturePaymentUseCase')).toBe(
+      'speckit-checklist-labels',
+    );
+  });
 });
 
 describe('parseTasksMd — v0.8 headings', () => {
@@ -109,6 +120,84 @@ describe('parseTasksMd — v0.7 checkboxes', () => {
       'returns 400 on bad input',
     ]);
     expect(result.entries[1].taskId).toBe('T-002');
+  });
+});
+
+describe('parseTasksMd — speckit-checklist-labels', () => {
+  it('parses unhyphenated TNNN ids with optional [P]/[Story] labels', () => {
+    const src = [
+      '# Tasks: Payment Gateway MVP',
+      '',
+      '## Phase 1: Setup (Shared Infrastructure)',
+      '',
+      '- [ ] T001 Create the multi-module layout in settings.gradle.kts',
+      '- [ ] T003 [P] Initialize mock-psp-stripe in mock-psp-stripe/build.gradle.kts',
+      '',
+      '## Phase 3: User Story 1 - Authorize and Capture a Payment (Priority: P1)',
+      '',
+      '**Goal**: core flow.',
+      '',
+      '- [ ] T021 [P] [US1] Unit test PaymentStateMachine in src/test/PaymentStateMachineTest.kt',
+      '- [ ] T030 [US1] Implement AuthorizePaymentUseCase in src/main/AuthorizePaymentUseCase.kt',
+    ].join('\n');
+
+    const result = parseTasksMd(src);
+    expect(result.schemaVersion).toBe('speckit-checklist-labels');
+    expect(result.entries).toHaveLength(4);
+
+    expect(result.entries[0]).toMatchObject({
+      taskId: 'T001',
+      title: 'Create the multi-module layout in settings.gradle.kts',
+      body: '',
+      acceptanceCriteria: [],
+    });
+    expect(result.entries[1]).toMatchObject({
+      taskId: 'T003',
+      title: 'Initialize mock-psp-stripe in mock-psp-stripe/build.gradle.kts',
+    });
+    // Phase headers and **Goal**-style prose between tasks are not folded
+    // into either neighbour's body.
+    expect(result.entries[2]).toMatchObject({
+      taskId: 'T021',
+      title: 'Unit test PaymentStateMachine in src/test/PaymentStateMachineTest.kt',
+      body: '',
+    });
+    expect(result.entries[3]).toMatchObject({
+      taskId: 'T030',
+      title: 'Implement AuthorizePaymentUseCase in src/main/AuthorizePaymentUseCase.kt',
+    });
+  });
+
+  it('treats a completed checkbox ([x]) the same as an open one', () => {
+    const result = parseTasksMd('- [x] T058 Wire CI quality gates in .github/workflows/gate.yml');
+    expect(result.schemaVersion).toBe('speckit-checklist-labels');
+    expect(result.entries[0].taskId).toBe('T058');
+  });
+
+  it('folds indented continuation lines into the title and stops at the next non-indented line', () => {
+    const src = [
+      '## Phase 5: User Story 3 (Priority: P3)',
+      '',
+      '**Goal**: Operations users can find payments stuck in an unknown state.',
+      '',
+      '- [ ] T050 [US3] Implement',
+      '  `GET /v1/payments?merchantId=&correlationId=`',
+      '  search endpoint in',
+      '  `payment-gateway/src/main/kotlin/.../PaymentResource.kt`',
+      '- [ ] T051 [US3] Add a latency assertion to the search contract test',
+      '',
+      '**Checkpoint**: All three user stories are independently functional.',
+    ].join('\n');
+
+    const result = parseTasksMd(src);
+    expect(result.schemaVersion).toBe('speckit-checklist-labels');
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0].taskId).toBe('T050');
+    expect(result.entries[0].title).toBe(
+      'Implement `GET /v1/payments?merchantId=&correlationId=` search endpoint in `payment-gateway/src/main/kotlin/.../PaymentResource.kt`',
+    );
+    expect(result.entries[1].taskId).toBe('T051');
+    expect(result.entries[1].title).toBe('Add a latency assertion to the search contract test');
   });
 });
 

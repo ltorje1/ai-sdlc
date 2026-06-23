@@ -25,14 +25,30 @@
  *     - AC: <criterion>
  *     - AC: <criterion>
  *
- * Both shapes are present in real spec-kit projects; v0.8 leans on the
- * `### T-NNN` heading form for `/speckit.tasks`, while older layouts use
- * the checkbox-list form.
+ *   OR (current `/speckit-tasks` checklist output — no hyphen in the task
+ *   id; optional `[P]` parallel marker and `[STORY]` label precede the
+ *   description, which also carries the target file path inline rather
+ *   than via separate `AC:` lines):
+ *
+ *   - [ ] T001 Description with file path
+ *   - [ ] T003 [P] Description with file path
+ *   - [ ] T021 [P] [US1] Description with file path
+ *   - [ ] T030 [US1] Description with file path
+ *
+ * All three shapes are present in real spec-kit projects; v0.8 leans on
+ * the `### T-NNN` heading form for `/speckit.tasks`, older layouts use
+ * the hyphenated checkbox-list form, and current `/speckit-tasks` output
+ * uses the unhyphenated `TNNN` checklist form with inline `[P]`/`[Story]`
+ * labels (no separate `AC:` lines — the description line is the spec).
  *
  * @module import-spec/parser
  */
 
-export type SpecKitSchemaVersion = 'v0.8-headings' | 'v0.7-checkboxes' | 'unknown';
+export type SpecKitSchemaVersion =
+  | 'v0.8-headings'
+  | 'v0.7-checkboxes'
+  | 'speckit-checklist-labels'
+  | 'unknown';
 
 export interface SpecKitTaskEntry {
   /** Upstream task identifier — e.g. 'T-001'. */
@@ -60,6 +76,20 @@ export interface ParseTasksMdResult {
 // prior trailing-strip behaviour.
 const HEADING_RE = /^###[ \t]+(T-\d+)[ \t]*[—\-:]?[ \t]*(.+)$/;
 const CHECKBOX_RE = /^-[ \t]*\[[ x]\][ \t]*(T-\d+)[ \t]*[—\-:]?[ \t]*(.+)$/i;
+// Current `/speckit-tasks` checklist form: `- [ ] T001 [P] [Story] Description`.
+// Task id is unhyphenated `T\d{3,}` (vs. legacy `T-\d+`), so this never
+// collides with HEADING_RE/CHECKBOX_RE. `[P]` and `[STORY]` are each
+// optional, single bracketed tokens consumed before the free-text
+// description; both use bounded `[ \t]+` (not `\s*`) around fixed
+// literal/charclass tokens, so — per the polynomial-backtracking note
+// above — there's no overlapping-optional-whitespace blowup risk.
+const CHECKLIST_LABELS_RE =
+  /^-[ \t]*\[[ xX]\][ \t]+(T\d{3,})[ \t]+(?:\[P\][ \t]+)?(?:\[([A-Za-z][A-Za-z0-9]*)\][ \t]+)?(.+)$/;
+// A markdown list-item continuation: indented ≥2 spaces, non-blank, and
+// (checked by the caller) not itself a new `- [ ] T###` line. Real
+// spec-kit output wraps long descriptions/file paths onto indented
+// follow-on lines rather than keeping every task on one physical line.
+const CONTINUATION_RE = /^[ \t]{2,}\S.*$/;
 const AC_LINE_RE = /^[ \t]*(?:-[ \t]*)?AC:[ \t]*(.+)$/i;
 const TASKS_SECTION_RE = /^##\s+Tasks\s*$/i;
 
@@ -73,6 +103,7 @@ export function detectSchema(source: string): SpecKitSchemaVersion {
   for (const line of lines) {
     if (HEADING_RE.test(line)) return 'v0.8-headings';
     if (CHECKBOX_RE.test(line)) return 'v0.7-checkboxes';
+    if (CHECKLIST_LABELS_RE.test(line)) return 'speckit-checklist-labels';
   }
   return 'unknown';
 }
@@ -100,6 +131,9 @@ export function parseTasksMd(source: string): ParseTasksMdResult {
 
   if (schemaVersion === 'v0.8-headings') {
     return { schemaVersion, entries: parseHeadings(lines, startIdx) };
+  }
+  if (schemaVersion === 'speckit-checklist-labels') {
+    return { schemaVersion, entries: parseChecklistLabels(lines, startIdx) };
   }
   return { schemaVersion, entries: parseCheckboxes(lines, startIdx) };
 }
@@ -184,5 +218,43 @@ function parseCheckboxes(lines: string[], startIdx: number): SpecKitTaskEntry[] 
     }
   }
   flush();
+  return entries;
+}
+
+/**
+ * Current `/speckit-tasks` checklist form. There's no separate `AC:`
+ * block — the description (optionally wrapped across indented
+ * continuation lines, since long descriptions/file paths routinely
+ * exceed one line) is the entire spec for the task, so it's folded into
+ * `title` rather than split title/body.
+ *
+ * Intervening *non-indented* lines (phase headers, blank lines,
+ * "**Goal**: ..." prose, the next task) end the current task's
+ * continuation — unlike {@link parseHeadings}/{@link parseCheckboxes},
+ * this parser never folds section prose into a task.
+ */
+function parseChecklistLabels(lines: string[], startIdx: number): SpecKitTaskEntry[] {
+  const entries: SpecKitTaskEntry[] = [];
+  let current: SpecKitTaskEntry | null = null;
+
+  for (let i = startIdx; i < lines.length; i += 1) {
+    const line = lines[i];
+    const match = CHECKLIST_LABELS_RE.exec(line);
+    if (match) {
+      current = {
+        taskId: match[1],
+        title: match[3].trim(),
+        body: '',
+        acceptanceCriteria: [],
+      };
+      entries.push(current);
+      continue;
+    }
+    if (current && CONTINUATION_RE.test(line)) {
+      current.title += ' ' + line.trim();
+      continue;
+    }
+    current = null;
+  }
   return entries;
 }
