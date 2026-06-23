@@ -145,26 +145,32 @@ describe('parseTasksMd — speckit-checklist-labels', () => {
     expect(result.schemaVersion).toBe('speckit-checklist-labels');
     expect(result.entries).toHaveLength(4);
 
+    // title and body are kept identical for this schema — there's no
+    // separate AC: block, so the description is the whole spec and must
+    // show up in the rendered task's Description section, not just its
+    // title.
     expect(result.entries[0]).toMatchObject({
       taskId: 'T001',
       title: 'Create the multi-module layout in settings.gradle.kts',
-      body: '',
+      body: 'Create the multi-module layout in settings.gradle.kts',
       acceptanceCriteria: [],
     });
     expect(result.entries[1]).toMatchObject({
       taskId: 'T003',
       title: 'Initialize mock-psp-stripe in mock-psp-stripe/build.gradle.kts',
+      body: 'Initialize mock-psp-stripe in mock-psp-stripe/build.gradle.kts',
     });
     // Phase headers and **Goal**-style prose between tasks are not folded
     // into either neighbour's body.
     expect(result.entries[2]).toMatchObject({
       taskId: 'T021',
       title: 'Unit test PaymentStateMachine in src/test/PaymentStateMachineTest.kt',
-      body: '',
+      body: 'Unit test PaymentStateMachine in src/test/PaymentStateMachineTest.kt',
     });
     expect(result.entries[3]).toMatchObject({
       taskId: 'T030',
       title: 'Implement AuthorizePaymentUseCase in src/main/AuthorizePaymentUseCase.kt',
+      body: 'Implement AuthorizePaymentUseCase in src/main/AuthorizePaymentUseCase.kt',
     });
   });
 
@@ -174,7 +180,7 @@ describe('parseTasksMd — speckit-checklist-labels', () => {
     expect(result.entries[0].taskId).toBe('T058');
   });
 
-  it('folds indented continuation lines into the title and stops at the next non-indented line', () => {
+  it('folds indented continuation lines into title AND body, stopping at the next non-indented line', () => {
     const src = [
       '## Phase 5: User Story 3 (Priority: P3)',
       '',
@@ -193,11 +199,13 @@ describe('parseTasksMd — speckit-checklist-labels', () => {
     expect(result.schemaVersion).toBe('speckit-checklist-labels');
     expect(result.entries).toHaveLength(2);
     expect(result.entries[0].taskId).toBe('T050');
-    expect(result.entries[0].title).toBe(
-      'Implement `GET /v1/payments?merchantId=&correlationId=` search endpoint in `payment-gateway/src/main/kotlin/.../PaymentResource.kt`',
-    );
+    const expectedT050 =
+      'Implement `GET /v1/payments?merchantId=&correlationId=` search endpoint in `payment-gateway/src/main/kotlin/.../PaymentResource.kt`';
+    expect(result.entries[0].title).toBe(expectedT050);
+    expect(result.entries[0].body).toBe(expectedT050);
     expect(result.entries[1].taskId).toBe('T051');
     expect(result.entries[1].title).toBe('Add a latency assertion to the search contract test');
+    expect(result.entries[1].body).toBe('Add a latency assertion to the search contract test');
   });
 });
 

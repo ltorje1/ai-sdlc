@@ -223,10 +223,13 @@ function parseCheckboxes(lines: string[], startIdx: number): SpecKitTaskEntry[] 
 
 /**
  * Current `/speckit-tasks` checklist form. There's no separate `AC:`
- * block — the description (optionally wrapped across indented
- * continuation lines, since long descriptions/file paths routinely
- * exceed one line) is the entire spec for the task, so it's folded into
- * `title` rather than split title/body.
+ * block, and no separate title/body split either — the description
+ * (optionally wrapped across indented continuation lines, since long
+ * descriptions/file paths routinely exceed one line) *is* the entire
+ * spec for the task. `title` and `body` are therefore kept identical:
+ * `title` so the task is identifiable in listings, `body` so the
+ * rendered task file's Description section shows the real upstream
+ * text instead of `task-writer`'s generic "(no body)" fallback note.
  *
  * Intervening *non-indented* lines (phase headers, blank lines,
  * "**Goal**: ..." prose, the next task) end the current task's
@@ -241,17 +244,20 @@ function parseChecklistLabels(lines: string[], startIdx: number): SpecKitTaskEnt
     const line = lines[i];
     const match = CHECKLIST_LABELS_RE.exec(line);
     if (match) {
+      const text = match[3].trim();
       current = {
         taskId: match[1],
-        title: match[3].trim(),
-        body: '',
+        title: text,
+        body: text,
         acceptanceCriteria: [],
       };
       entries.push(current);
       continue;
     }
     if (current && CONTINUATION_RE.test(line)) {
-      current.title += ' ' + line.trim();
+      const text = line.trim();
+      current.title += ' ' + text;
+      current.body += ' ' + text;
       continue;
     }
     current = null;
