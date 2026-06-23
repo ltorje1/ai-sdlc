@@ -207,6 +207,79 @@ describe('parseTasksMd — speckit-checklist-labels', () => {
     expect(result.entries[1].title).toBe('Add a latency assertion to the search contract test');
     expect(result.entries[1].body).toBe('Add a latency assertion to the search contract test');
   });
+
+  it('extracts indented "- AC:" sub-bullets into acceptanceCriteria instead of folding them into body', () => {
+    const src = [
+      '- [ ] T010 [US1] Implement PaymentStatus enum in src/domain/PaymentStatus.kt',
+      '  - AC: enum includes all 14 states from data-model.md',
+      '  - AC: invalid transitions throw PaymentError.InvalidTransition',
+      '- [ ] T011 [P] Implement PaymentError sealed class in src/domain/PaymentError.kt',
+    ].join('\n');
+
+    const result = parseTasksMd(src);
+    expect(result.schemaVersion).toBe('speckit-checklist-labels');
+    expect(result.entries).toHaveLength(2);
+
+    expect(result.entries[0].taskId).toBe('T010');
+    expect(result.entries[0].title).toBe(
+      'Implement PaymentStatus enum in src/domain/PaymentStatus.kt',
+    );
+    expect(result.entries[0].body).toBe(
+      'Implement PaymentStatus enum in src/domain/PaymentStatus.kt',
+    );
+    expect(result.entries[0].acceptanceCriteria).toEqual([
+      'enum includes all 14 states from data-model.md',
+      'invalid transitions throw PaymentError.InvalidTransition',
+    ]);
+
+    // AC lines for T010 don't leak into T011.
+    expect(result.entries[1].taskId).toBe('T011');
+    expect(result.entries[1].acceptanceCriteria).toEqual([]);
+  });
+
+  it('mixes plain continuation lines and AC: lines on the same task', () => {
+    const src = [
+      '- [ ] T042 [US2] Implement RefundPaymentUseCase fullpartial validates against',
+      '  `capturedAmount - refundedAmount` in src/RefundPaymentUseCase.kt',
+      '  - AC: rejects a refund exceeding the remaining captured amount',
+    ].join('\n');
+
+    const result = parseTasksMd(src);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].title).toBe(
+      'Implement RefundPaymentUseCase fullpartial validates against `capturedAmount - refundedAmount` in src/RefundPaymentUseCase.kt',
+    );
+    expect(result.entries[0].acceptanceCriteria).toEqual([
+      'rejects a refund exceeding the remaining captured amount',
+    ]);
+  });
+
+  it('folds a wrapped AC: line continuation into the criterion, not the title/body', () => {
+    const src = [
+      '- [ ] T010 Implement PaymentStatus enum in src/domain/PaymentStatus.kt',
+      '  - AC: PaymentStatus defines all 14 states listed in data-model.md',
+      '  - AC: PaymentStateMachine rejects CREATED to CAPTURED and',
+      '    AUTHORIZATION_FAILED to CAPTURED with PaymentError.InvalidTransition',
+      '- [ ] T011 [P] Implement PaymentError sealed class in src/domain/PaymentError.kt',
+    ].join('\n');
+
+    const result = parseTasksMd(src);
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0].taskId).toBe('T010');
+    // The title/body must NOT have picked up the wrapped AC continuation.
+    expect(result.entries[0].title).toBe(
+      'Implement PaymentStatus enum in src/domain/PaymentStatus.kt',
+    );
+    expect(result.entries[0].body).toBe(
+      'Implement PaymentStatus enum in src/domain/PaymentStatus.kt',
+    );
+    expect(result.entries[0].acceptanceCriteria).toEqual([
+      'PaymentStatus defines all 14 states listed in data-model.md',
+      'PaymentStateMachine rejects CREATED to CAPTURED and AUTHORIZATION_FAILED to CAPTURED with PaymentError.InvalidTransition',
+    ]);
+    expect(result.entries[1].taskId).toBe('T011');
+    expect(result.entries[1].acceptanceCriteria).toEqual([]);
+  });
 });
 
 describe('parseTasksMd — unknown schema', () => {

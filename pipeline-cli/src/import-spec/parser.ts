@@ -27,19 +27,24 @@
  *
  *   OR (current `/speckit-tasks` checklist output — no hyphen in the task
  *   id; optional `[P]` parallel marker and `[STORY]` label precede the
- *   description, which also carries the target file path inline rather
- *   than via separate `AC:` lines):
+ *   description, which also carries the target file path inline. The
+ *   standard `/speckit-tasks` skill emits no separate `AC:` lines here,
+ *   but adopters MAY add indented `- AC: <criterion>` sub-bullets as a
+ *   non-standard extension — when present, they're extracted the same
+ *   way as the legacy schemas' `AC:` lines rather than folded into the
+ *   description):
  *
  *   - [ ] T001 Description with file path
  *   - [ ] T003 [P] Description with file path
  *   - [ ] T021 [P] [US1] Description with file path
+ *     - AC: <criterion>
  *   - [ ] T030 [US1] Description with file path
  *
  * All three shapes are present in real spec-kit projects; v0.8 leans on
  * the `### T-NNN` heading form for `/speckit.tasks`, older layouts use
  * the hyphenated checkbox-list form, and current `/speckit-tasks` output
  * uses the unhyphenated `TNNN` checklist form with inline `[P]`/`[Story]`
- * labels (no separate `AC:` lines — the description line is the spec).
+ * labels and (optionally) the same `AC:` sub-bullet extension.
  *
  * @module import-spec/parser
  */
@@ -222,14 +227,25 @@ function parseCheckboxes(lines: string[], startIdx: number): SpecKitTaskEntry[] 
 }
 
 /**
- * Current `/speckit-tasks` checklist form. There's no separate `AC:`
- * block, and no separate title/body split either — the description
- * (optionally wrapped across indented continuation lines, since long
- * descriptions/file paths routinely exceed one line) *is* the entire
- * spec for the task. `title` and `body` are therefore kept identical:
- * `title` so the task is identifiable in listings, `body` so the
- * rendered task file's Description section shows the real upstream
+ * Current `/speckit-tasks` checklist form. By default there's no
+ * separate `AC:` block, and no separate title/body split either — the
+ * description (optionally wrapped across indented continuation lines,
+ * since long descriptions/file paths routinely exceed one line) *is*
+ * the entire spec for the task. `title` and `body` are therefore kept
+ * identical: `title` so the task is identifiable in listings, `body` so
+ * the rendered task file's Description section shows the real upstream
  * text instead of `task-writer`'s generic "(no body)" fallback note.
+ *
+ * Adopters MAY additionally annotate a task with indented
+ * `- AC: <criterion>` sub-bullets (a non-standard extension to the
+ * vanilla `/speckit-tasks` output, mirroring the legacy schemas' `AC:`
+ * convention). When present, those lines are extracted into
+ * `acceptanceCriteria` instead of being folded into title/body — same
+ * precedence as {@link parseHeadings}/{@link parseCheckboxes}. A long
+ * `AC:` line MAY itself wrap onto further indented continuation
+ * lines (no further `AC:` marker on those) — `lastWasAc` tracks that
+ * so the wrapped text extends the *acceptance criterion*, not the
+ * task's title/body.
  *
  * Intervening *non-indented* lines (phase headers, blank lines,
  * "**Goal**: ..." prose, the next task) end the current task's
@@ -239,6 +255,7 @@ function parseCheckboxes(lines: string[], startIdx: number): SpecKitTaskEntry[] 
 function parseChecklistLabels(lines: string[], startIdx: number): SpecKitTaskEntry[] {
   const entries: SpecKitTaskEntry[] = [];
   let current: SpecKitTaskEntry | null = null;
+  let lastWasAc = false;
 
   for (let i = startIdx; i < lines.length; i += 1) {
     const line = lines[i];
@@ -252,15 +269,28 @@ function parseChecklistLabels(lines: string[], startIdx: number): SpecKitTaskEnt
         acceptanceCriteria: [],
       };
       entries.push(current);
+      lastWasAc = false;
       continue;
     }
     if (current && CONTINUATION_RE.test(line)) {
-      const text = line.trim();
-      current.title += ' ' + text;
-      current.body += ' ' + text;
+      const trimmed = line.trim();
+      const acMatch = AC_LINE_RE.exec(trimmed);
+      if (acMatch) {
+        current.acceptanceCriteria.push(acMatch[1].trim());
+        lastWasAc = true;
+        continue;
+      }
+      if (lastWasAc) {
+        const lastIdx = current.acceptanceCriteria.length - 1;
+        current.acceptanceCriteria[lastIdx] += ' ' + trimmed;
+      } else {
+        current.title += ' ' + trimmed;
+        current.body += ' ' + trimmed;
+      }
       continue;
     }
     current = null;
+    lastWasAc = false;
   }
   return entries;
 }
