@@ -47,8 +47,7 @@ on:
   # for high-frequency schedules. Cron runs ALWAYS execute in target-repo
   # context (no fork-token-downgrade quirk), so they're unaffected by the
   # AISDLC-381 migration.
-  schedule:
-    - cron: '*/5 * * * *'
+
 
 permissions:
   # AISDLC-381 iter-2 MINOR (security-reviewer): `contents: write` was
